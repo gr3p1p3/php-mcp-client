@@ -43,12 +43,13 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
     protected ?Deferred $connectRequestDeferred = null;
 
     public function __construct(
-        protected readonly string $url,
+        protected readonly string        $url,
         protected readonly LoopInterface $loop,
-        protected readonly ?array $headers = null,
-        ?string $sessionId = null,
-        ?Browser $httpClient = null,
-    ) {
+        protected readonly ?array        $headers = null,
+        ?string                          $sessionId = null,
+        ?Browser                         $httpClient = null,
+    )
+    {
         $this->httpClient = $httpClient ?? new Browser(new Connector($this->loop), $this->loop);
         $this->sessionId = $sessionId;
         $this->logger = new NullLogger;
@@ -70,8 +71,8 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
         $this->closing = false;
 
         $this->connectPromise->then(
-            fn () => $this->connectPromiseSettled = true,
-            fn () => $this->connectPromiseSettled = true
+            fn() => $this->connectPromiseSettled = true,
+            fn() => $this->connectPromiseSettled = true
         );
 
         $headers = $this->headers ?? [];
@@ -92,15 +93,15 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                 $this->logger->debug('SSE: Connection established', ['status' => $statusCode]);
 
                 if ($statusCode !== 200) {
-                    $body = (string) $response->getBody();
-                    $this->connectRequestDeferred->reject(new TransportException("SSE connection failed: Status {$statusCode} - ".($body ?: '(no body)')));
+                    $body = (string)$response->getBody();
+                    $this->connectRequestDeferred->reject(new TransportException("SSE connection failed: Status {$statusCode} - " . ($body ?: '(no body)')));
                     $this->connectRequestDeferred = null;
                     $this->cleanup();
 
                     return;
                 }
 
-                if (! str_contains(strtolower($response->getHeaderLine('Content-Type')), 'text/event-stream')) {
+                if (!str_contains(strtolower($response->getHeaderLine('Content-Type')), 'text/event-stream')) {
                     $this->connectRequestDeferred->reject(new TransportException("Invalid SSE response Content-Type: {$response->getHeaderLine('Content-Type')}"));
                     $this->connectRequestDeferred = null;
                     $this->cleanup();
@@ -108,7 +109,7 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                     return;
                 }
 
-                if (! $this->sessionId && $response->hasHeader('Mcp-Session-Id')) {
+                if (!$this->sessionId && $response->hasHeader('Mcp-Session-Id')) {
                     $this->sessionId = $response->getHeaderLine('Mcp-Session-Id');
                     $this->logger->info('SSE: Received session ID from server', ['session_id' => $this->sessionId]);
                     $this->emit('session_id_received', [$this->sessionId]);
@@ -125,20 +126,25 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
 
                 $this->sseStream->on('data', function ($chunk) use (&$buffer) {
                     $buffer .= $chunk;
-                    while (($pos = strpos($buffer, "\n\n")) !== false) {
-                        $eventBlock = substr($buffer, 0, $pos);
-                        $buffer = substr($buffer, $pos + 2);
+                    // normalizing for Linux (\n) and Windows (\r\n)
+                    $normalizedBuffer = str_replace("\r\n", "\n", $buffer);
+
+                    while (($pos = strpos($normalizedBuffer, "\n\n")) !== false) {
+                        $eventBlock = substr($normalizedBuffer, 0, $pos);
+                        $buffer = substr($normalizedBuffer, $pos + 2);
+                        $normalizedBuffer = $buffer;
 
                         $event = 'message';
                         $data = '';
                         $id = null;
 
                         foreach (explode("\n", $eventBlock) as $line) {
+                            $line = trim($line, "\r"); // remove single \r
+
                             if (str_starts_with($line, 'event:')) {
                                 $event = trim(substr($line, 6));
                             } elseif (str_starts_with($line, 'data:')) {
-                                // TODO: Handle multi-line data
-                                $data .= trim(substr($line, 5));
+                                $data .= ($data === '' ? '' : "\n") . ltrim(substr($line, 5), ' ');
                             } elseif (str_starts_with($line, 'id:')) {
                                 $id = trim(substr($line, 3));
                             }
@@ -173,8 +179,8 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
             function (Throwable $error) {
                 // Handle connection error (DNS, TCP, TLS etc.)
                 $this->logger->error('SSE: Connection failed', ['error' => $error->getMessage()]);
-                if (! $this->connectPromiseSettled) {
-                    $this->connectRequestDeferred->reject(new TransportException('HTTP connection failed: '.$error->getMessage(), 0, $error));
+                if (!$this->connectPromiseSettled) {
+                    $this->connectRequestDeferred->reject(new TransportException('HTTP connection failed: ' . $error->getMessage(), 0, $error));
                     $this->connectRequestDeferred = null;
                 }
                 $this->cleanup();
@@ -203,15 +209,16 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                     $this->postEndpointUrl = $resolvedUrl;
 
                     // Now we are truly ready for the MCP handshake
-                    if ($this->connectPromise && ! $this->connectPromiseSettled) {
+                    if ($this->connectPromise && !$this->connectPromiseSettled) {
                         $this->connectRequestDeferred->resolve(null);
                         $this->connectRequestDeferred = null;
                     }
-                } catch (\Throwable $e) {
+                }
+                catch (\Throwable $e) {
                     $this->logger->error('SSE: Failed to resolve endpoint URL', ['error' => $e->getMessage(), 'base_url' => $this->url, 'relative_path' => $data]);
                     $this->emit('error', [new TransportException("Failed to resolve endpoint URL: {$e->getMessage()}", 0, $e)]);
 
-                    if ($this->connectRequestDeferred && ! $this->connectPromiseSettled) {
+                    if ($this->connectRequestDeferred && !$this->connectPromiseSettled) {
                         $this->connectRequestDeferred->reject(new TransportException("Failed to resolve endpoint URL: {$e->getMessage()}", 0, $e));
                         $this->connectRequestDeferred = null;
                     }
@@ -229,23 +236,25 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                     } else {
                         $this->logger->warning('SSE: Received unrecognized message structure', ['data' => $data]);
                     }
-                } catch (JsonException $e) {
+                }
+                catch (JsonException $e) {
                     $this->emit('error', [new TransportException("SSE: Failed to decode JSON: {$e->getMessage()}", 0, $e)]);
-                } catch (Throwable $e) {
+                }
+                catch (Throwable $e) {
                     $this->emit('error', [new TransportException("SSE: Error parsing message: {$e->getMessage()}", 0, $e)]);
                 }
                 break;
 
             case 'error': // Some servers might send explicit error events
                 $this->logger->error('SSE: Received error event from server', ['data' => $data]);
-                $this->emit('error', [new TransportException('Received error event from server: '.$data)]);
+                $this->emit('error', [new TransportException('Received error event from server: ' . $data)]);
                 break;
 
             case 'ping': // Handle keep-alive pings if necessary
                 $this->logger->debug('SSE: Received ping event');
                 break;
 
-                // Ignore other events for now
+            // Ignore other events for now
         }
     }
 
@@ -253,7 +262,7 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
     private function parseMessageData(array $data): ?Message
     {
         // ... same implementation as in StdioClientTransport ...
-        if (! isset($data['jsonrpc']) || $data['jsonrpc'] !== '2.0') {
+        if (!isset($data['jsonrpc']) || $data['jsonrpc'] !== '2.0') {
             return null;
         }
         // ... rest of parsing logic ...
@@ -285,13 +294,13 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
         // Build the authority part (scheme://[user:pass@]host:port)
         $authority = '';
         if (isset($baseParts['scheme'])) {
-            $authority .= $baseParts['scheme'].':';
+            $authority .= $baseParts['scheme'] . ':';
         }
         $authority .= '//';
         if (isset($baseParts['user'])) {
             $authority .= $baseParts['user'];
             if (isset($baseParts['pass'])) {
-                $authority .= ':'.$baseParts['pass'];
+                $authority .= ':' . $baseParts['pass'];
             }
             $authority .= '@';
         }
@@ -299,12 +308,12 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
             $authority .= $baseParts['host'];
         }
         if (isset($baseParts['port'])) {
-            $authority .= ':'.$baseParts['port'];
+            $authority .= ':' . $baseParts['port'];
         }
 
         if (str_starts_with($relative, '/')) {
             // Relative path starts with '/', treat as relative to authority
-            return $authority.$relative;
+            return $authority . $relative;
         } else {
             // Relative path does not start with '/', resolve relative to base path's directory
             $basePath = $baseParts['path'] ?? '/';
@@ -323,7 +332,7 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
             }
 
             // Combine directory and relative path
-            return $authority.$baseDir.$relative;
+            return $authority . $baseDir . $relative;
         }
     }
 
@@ -354,7 +363,7 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                     function (PsrResponseInterface $response) {
                         $statusCode = $response->getStatusCode();
                         if ($statusCode < 200 || $statusCode >= 300) {
-                            $body = (string) $response->getBody();
+                            $body = (string)$response->getBody();
                             $this->logger->warning('HTTP: POST request returned non-2xx status', ['status' => $statusCode, 'body' => $body]);
                             // Decide if this should reject the send promise
                             // throw new TransportException("POST request failed with status {$statusCode}");
@@ -367,9 +376,11 @@ class HttpClientTransport implements LoggerAwareInterface, TransportInterface
                     }
                 );
 
-        } catch (JsonException $e) {
+        }
+        catch (JsonException $e) {
             return \React\Promise\reject(new TransportException("Failed to encode message to JSON: {$e->getMessage()}", 0, $e));
-        } catch (Throwable $e) {
+        }
+        catch (Throwable $e) {
             return \React\Promise\reject(new TransportException("Error preparing POST request: {$e->getMessage()}", 0, $e));
         }
     }
