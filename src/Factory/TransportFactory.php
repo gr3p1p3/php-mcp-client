@@ -9,6 +9,7 @@ use PhpMcp\Client\Contracts\TransportInterface;
 use PhpMcp\Client\Enum\TransportType;
 use PhpMcp\Client\ServerConfig;
 use PhpMcp\Client\Transport\Http\HttpClientTransport;
+use PhpMcp\Client\Transport\Http\StreamableHttpClientTransport;
 use PhpMcp\Client\Transport\Stdio\StdioClientTransport;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
@@ -31,6 +32,7 @@ class TransportFactory
         $transport = match ($config->transport) {
             TransportType::Stdio => $this->createStdioTransport($config),
             TransportType::Http => $this->createHttpTransport($config),
+            TransportType::StreamableHttp => $this->createStreamableHttpTransport($config),
         };
 
         if ($transport instanceof LoggerAwareInterface) {
@@ -58,6 +60,15 @@ class TransportFactory
             $this->loop,
             $config->headers,
             $config->sessionId
+        );
+    }
+
+    private function createStreamableHttpTransport(ServerConfig $config): TransportInterface
+    {
+        return new StreamableHttpClientTransport(
+            $config->url,
+            $this->loop,
+            $config->headers
         );
     }
 }
