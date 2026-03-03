@@ -11,4 +11,5 @@ enum TransportType: string
 {
     case Stdio = 'stdio';
     case Http = 'http';
+    case StreamableHttp = 'streamable_http';
 }
