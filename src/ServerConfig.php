@@ -183,6 +183,7 @@ class ServerConfig
         match ($this->transport) {
             TransportType::Stdio => $this->validateStdio(),
             TransportType::Http => $this->validateHttp(),
+            TransportType::StreamableHttp => $this->validateHttp(), // here a normal validation is enough
         };
     }
 
