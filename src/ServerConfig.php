@@ -71,7 +71,7 @@ class ServerConfig
         try {
             $transport = TransportType::from(strtolower($transportValue));
         } catch (ValueError $e) {
-            throw new ConfigurationException("Invalid transport type '{$transportValue}' specified for server '{$name}'. Must be 'stdio' or 'http'.", 0, $e);
+            throw new ConfigurationException("Invalid transport type '{$transportValue}' specified for server '{$name}'. Must be 'stdio', 'http', or 'streamable_http'.", 0, $e);
         }
 
         $timeout = $config['timeout'] ?? 30.0;
@@ -109,7 +109,7 @@ class ServerConfig
                 throw new ConfigurationException("Invalid 'env' format for stdio server '{$name}'. Expected map<string, string|false> or null.");
             }
 
-        } elseif ($transport === TransportType::Http) {
+        } elseif ($transport === TransportType::Http || $transport === TransportType::StreamableHttp) {
             $url = $config['url'] ?? null;
             if (! is_string($url) || empty($url)) {
                 throw new ConfigurationException("Missing or invalid 'url' for http server '{$name}'.");
