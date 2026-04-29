@@ -71,54 +71,18 @@ class StreamableHttpClientTransport implements TransportInterface, LoggerAwareIn
 
     public function connect(): PromiseInterface
     {
-        $deferred = new Deferred();
+        if ($this->connected) {
+            return \React\Promise\resolve(null);
+        }
 
-        $initMessage = new Request(
-            id: 1,
-            method: 'initialize',
-            params: [
-                'protocolVersion' => '2025-03-26',
-                'capabilities' => [],
-                'clientInfo' => ['name' => 'php-mcp-client', 'version' => '1.0.0'],
-            ]
-        );
+        $this->closing = false;
+        $this->connected = true;
 
-        $this->logger->debug('StreamableHTTP: Connecting via initialize POST', ['url' => $this->url]);
+        // Streamable HTTP does not need a separate transport-level handshake.
+        // The Client class performs the MCP initialize/initialized sequence.
+        $this->logger->debug('StreamableHTTP: Transport ready for MCP handshake', ['url' => $this->url]);
 
-        $this->postMessage($initMessage)
-            ->then(
-                function (array $responseData) use ($deferred) {
-                    $this->logger->debug('StreamableHTTP: initialize response received', $responseData);
-
-                    // Send notifications/initialized (fire-and-forget, 202 expected)
-                    $notification = new Notification(
-                        method: 'notifications/initialized',
-                        params: []
-                    );
-
-                    $this->postMessage($notification)
-                        ->then(
-                            function () use ($deferred) {
-                                $this->connected = true;
-                                $this->logger->info('StreamableHTTP: Connected and initialized.');
-                                $deferred->resolve(null);
-                            },
-                            function (Throwable $e) use ($deferred) {
-                                // Some servers respond 202 which ReactPHP may surface as an error;
-                                // treat any response to the notification as success.
-                                $this->connected = true;
-                                $this->logger->info('StreamableHTTP: Connected (notification ack: ' . $e->getMessage() . ')');
-                                $deferred->resolve(null);
-                            }
-                        );
-                },
-                function (Throwable $e) use ($deferred) {
-                    $this->logger->error('StreamableHTTP: Connection failed', ['error' => $e->getMessage()]);
-                    $deferred->reject(new TransportException('Connection failed: ' . $e->getMessage(), 0, $e));
-                }
-            );
-
-        return $deferred->promise();
+        return \React\Promise\resolve(null);
     }
 
     public function send(Message $message): PromiseInterface
@@ -136,7 +100,7 @@ class StreamableHttpClientTransport implements TransportInterface, LoggerAwareIn
             return;
         }
 
-        $this->closing = false;
+        $this->closing = true;
         $this->connected = false;
 
         foreach ($this->pending as $deferred) {
